@@ -281,25 +281,41 @@ page_init(void)
 	// all free pages.
 	// The initial value of page_free_list is zero.
 
-	size_t i;
-	uint32_t page_index_next_free = ((uint32_t)(struct PageInfo *)(pages + npages)-KERNBASE)/PGSIZE;
-	for (i = 0; i < npages; i++) {
-		if (i == 0) {
-			pages[i].pp_ref = 1;
-		}
-		else if (i >= npages_basemem && i < npages_basemem + 96) {
-			pages[i].pp_ref = 1;
-		}
-		// the space used in extended memory is allocated by boot_alloc, which doesn't have a
-		// valid pp_ref field as stated in comments of struct PageInfo
-		else if (i >= npages_basemem + 96 && i < page_index_next_free){
+	// size_t i;
+	// uint32_t page_index_next_free = ((uint32_t)(struct PageInfo *)(pages + npages)-KERNBASE)/PGSIZE;
+	// for (i = 0; i < npages; i++) {
+	// 	if (i == 0) {
+	// 		pages[i].pp_ref = 1;
+	// 	}
+	// 	else if (i >= npages_basemem && i < npages_basemem + 96) {
+	// 		pages[i].pp_ref = 1;
+	// 	}
+	// 	// the space used in extended memory is allocated by boot_alloc, which doesn't have a
+	// 	// valid pp_ref field as stated in comments of struct PageInfo
+	// 	else if (i >= npages_basemem + 96 && i < page_index_next_free){
 
-		}
-		else{
-			pages[i].pp_ref = 0;
-			pages[i].pp_link = page_free_list;
-			page_free_list = &pages[i];
-		}
+	// 	}
+	// 	else{
+	// 		pages[i].pp_ref = 0;
+	// 		pages[i].pp_link = page_free_list;
+	// 		page_free_list = &pages[i];
+	// 	}
+	// }
+
+	size_t i;
+	page_free_list = NULL;
+	pages[0].pp_ref = 1;
+
+	for (i = 1; i < npages_basemem; ++i) {
+		pages[i].pp_ref = 0;
+		pages[i].pp_link = page_free_list;
+		page_free_list = &pages[i];
+	}
+
+	for (i = PADDR(boot_alloc(0)) / PGSIZE; i < npages; ++i) {
+		pages[i].pp_ref = 0;
+		pages[i].pp_link = page_free_list;
+		page_free_list = &pages[i];
 	}
 }
 
