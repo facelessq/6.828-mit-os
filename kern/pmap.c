@@ -486,7 +486,7 @@ boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm
 //
 // Hint: The TA solution is implemented using pgdir_walk, page_remove,
 // and page2pa.
-//
+
 int
 page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 {
@@ -606,8 +606,43 @@ int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 3: Your code here.
-
+	pte_t * pe;
+	uintptr_t va_rounded = (uintptr_t)ROUNDDOWN(va, PGSIZE);
+	int num_page = ROUNDUP(len, PGSIZE) / PGSIZE;
+	if (((uintptr_t)va + len) > (va_rounded + PGSIZE * num_page))
+		num_page++;
+	uintptr_t va_temp = (uintptr_t)va;
+	for (int i=0; i<num_page; i++){
+		if (va_temp >= ULIM){
+			user_mem_check_addr = va_temp;
+			return -E_FAULT;
+		}
+		pe = pgdir_walk(env->env_pgdir, (void *)va_temp, 0);
+		if (pe == NULL || (((*pe)&(perm|PTE_P)) != (perm|PTE_P))){
+			user_mem_check_addr = va_temp;
+			return -E_FAULT;
+		}
+		va_temp = ROUNDDOWN(va_temp, PGSIZE);
+		va_temp += PGSIZE;
+	}
 	return 0;
+
+	// uint32_t addr = (uint32_t)va;
+	// uint32_t begin = ROUNDDOWN(addr, PGSIZE);
+	// uint32_t end = ROUNDUP(addr + len, PGSIZE);
+
+	// while (begin < end) {
+	//     pte_t *pte = pgdir_walk(env->env_pgdir, (void *)begin, 0);
+
+	//     // Thanks @trace-andreason for telling me the mistake on next line
+	//     if (begin >= ULIM || pte == NULL || !(*pte & PTE_P) || (*pte & perm) != perm) {
+	//         user_mem_check_addr = (begin < addr) ? addr : begin;
+	//         if ((*pte & PTE_P) == 0) cprintf("page not present\n");
+	//         return -E_FAULT;
+	//     }
+	//     begin += PGSIZE;
+	// }
+	// return 0;
 }
 
 //
