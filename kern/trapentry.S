@@ -47,10 +47,57 @@
 /*
  * Lab 3: Your code here for generating entry points for the different traps.
  */
-
-
+/* the first line below equals to
+ * DIVIDE:
+ * pushl DIVIDE;
+ * jmp _alltraps
+ */
+TRAPHANDLER_NOEC(DIVIDE, T_DIVIDE)
+TRAPHANDLER_NOEC(DEBUG, T_DEBUG)
+TRAPHANDLER_NOEC(NMI, T_NMI)
+TRAPHANDLER_NOEC(BRKPT, T_BRKPT)
+TRAPHANDLER_NOEC(OFLOW, T_OFLOW)
+TRAPHANDLER_NOEC(BOUND, T_BOUND)
+TRAPHANDLER_NOEC(ILLOP, T_ILLOP)
+TRAPHANDLER_NOEC(DEVICE, T_DEVICE)
+TRAPHANDLER(DBLFLT, T_DBLFLT)
+TRAPHANDLER(TSS, T_TSS)
+TRAPHANDLER(SEGNP, T_SEGNP)
+TRAPHANDLER(STACK, T_STACK)
+TRAPHANDLER(GPFLT, T_GPFLT)
+TRAPHANDLER(PGFLT, T_PGFLT)
+TRAPHANDLER_NOEC(FPERR, T_FPERR)
+TRAPHANDLER(ALIGN, T_ALIGN)
+TRAPHANDLER_NOEC(MCHK, T_MCHK)
+TRAPHANDLER_NOEC(SIMDERR, T_SIMDERR)
+TRAPHANDLER_NOEC(SYSCALL, T_SYSCALL)
 
 /*
  * Lab 3: Your code here for _alltraps
  */
+/* When a trap happens, the processor will pushes old SS, old ESP, 
+ * old EFLAGS, old CS, old EIP and error code(in case there's no error
+ * code, push 0) to the kernel stack. So in alltraps we only need to 
+ * push the registers left in struct Trapframe.
+ */
 
+_alltraps:
+/*
+ * push values to make the stack look like a struct Trapframe
+ * load GD_KD into %ds and %es
+ * pushl %esp to pass a pointer to the Trapframe as an argument to trap()
+ * call trap (can trap ever return?)
+ */
+pushl %ds;
+pushl %es;
+pushal;
+pushl $GD_KD;
+popl %ds;
+pushl $GD_KD;
+popl %es;
+pushl %esp;
+call trap;
+/* mov for segment register like es, ds only allows mov from register to segment
+ * register or from memory to segment register, can't move immediate directly to a
+ * segment register.
+*/

@@ -41,7 +41,7 @@ bootmain(void)
 	struct Proghdr *ph, *eph;
 	int i;
 
-	// read 1st page off disk
+	// read 1st page off disk (4MB)
 	readseg((uint32_t) ELFHDR, SECTSIZE*8, 0);
 
 	// is this a valid ELF?
@@ -49,6 +49,7 @@ bootmain(void)
 		goto bad;
 
 	// load each program segment (ignores ph flags)
+	// ph: program header, 获得elf的header
 	ph = (struct Proghdr *) ((uint8_t *) ELFHDR + ELFHDR->e_phoff);
 	eph = ph + ELFHDR->e_phnum;
 	for (; ph < eph; ph++) {

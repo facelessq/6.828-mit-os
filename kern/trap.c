@@ -72,6 +72,47 @@ trap_init(void)
 	extern struct Segdesc gdt[];
 
 	// LAB 3: Your code here.
+	// this website tells how to set the dpl of different exceptions
+	// https://www.oreilly.com/library/view/understanding-the-linux/0596002130/ch04s04.html
+	// SETGATE(gate, istrap, sel, off, dpl)
+	void DIVIDE();
+	SETGATE(idt[0], 1, GD_KT, DIVIDE, 0);
+	void DEBUG();
+	SETGATE(idt[1], 1, GD_KT, DEBUG, 0);
+	void NMI();
+	SETGATE(idt[2], 0, GD_KT, NMI, 0);
+	void BRKPT();
+	SETGATE(idt[3], 1, GD_KT, BRKPT, 3);
+	void OFLOW();
+	SETGATE(idt[4], 1, GD_KT, OFLOW, 3);
+	void BOUND();
+	SETGATE(idt[5], 1, GD_KT, BOUND, 3);
+	void ILLOP();
+	SETGATE(idt[6], 1, GD_KT, ILLOP, 0);
+	void DEVICE();
+	SETGATE(idt[7], 1, GD_KT, DEVICE, 0);
+	void DBLFLT();
+	SETGATE(idt[8], 1, GD_KT, DBLFLT, 0);
+	void TSS();
+	SETGATE(idt[10], 1, GD_KT, TSS, 0);
+	void SEGNP();
+	SETGATE(idt[11], 1, GD_KT, SEGNP, 0);
+	void STACK();
+	SETGATE(idt[12], 1, GD_KT, STACK, 0);
+	void GPFLT();
+	SETGATE(idt[13], 1, GD_KT, GPFLT, 0);
+	void PGFLT();
+	SETGATE(idt[14], 1, GD_KT, PGFLT, 0);
+	void FPERR();
+	SETGATE(idt[16], 1, GD_KT, FPERR, 0);
+	void ALIGN();
+	SETGATE(idt[17], 1, GD_KT, ALIGN, 0);
+	void MCHK();
+	SETGATE(idt[18], 1, GD_KT, MCHK, 0);
+	void SIMDERR();
+	SETGATE(idt[19], 1, GD_KT, SIMDERR, 0);
+	void SYSCALL();
+	SETGATE(idt[48], 0, GD_KT, SYSCALL, 3);
 
 	// Per-CPU setup 
 	trap_init_percpu();
@@ -176,27 +217,45 @@ trap_dispatch(struct Trapframe *tf)
 {
 	// Handle processor exceptions.
 	// LAB 3: Your code here.
+	switch (tf->tf_trapno){
+		case T_BRKPT:
+			monitor(tf);
+			return;
+		case T_PGFLT:
+			page_fault_handler(tf);
+			return;
+		case T_SYSCALL:
+			tf->tf_regs.reg_eax = syscall(tf->tf_regs.reg_eax,
+				tf->tf_regs.reg_edx, tf->tf_regs.reg_ecx,
+				tf->tf_regs.reg_ebx, tf->tf_regs.reg_edi,
+				tf->tf_regs.reg_esi);
+			return;
+		// Handle spurious interrupts
+		// The hardware sometimes raises these because of noise on the
+		// IRQ line or other reasons. We don't care.
+		// if (tf->tf_trapno == IRQ_OFFSET + IRQ_SPURIOUS) {
+		// 	cprintf("Spurious interrupt on irq 7\n");
+		// 	print_trapframe(tf);
+		// 	return;
+		// }
+		case IRQ_OFFSET + IRQ_SPURIOUS:
+			cprintf("Spurious interrupt on irq 7\n");
+			print_trapframe(tf);
+			return;
 
-	// Handle spurious interrupts
-	// The hardware sometimes raises these because of noise on the
-	// IRQ line or other reasons. We don't care.
-	if (tf->tf_trapno == IRQ_OFFSET + IRQ_SPURIOUS) {
-		cprintf("Spurious interrupt on irq 7\n");
-		print_trapframe(tf);
-		return;
-	}
+		// Handle clock interrupts. Don't forget to acknowledge the
+		// interrupt using lapic_eoi() before calling the scheduler!
+		// LAB 4: Your code here.
 
-	// Handle clock interrupts. Don't forget to acknowledge the
-	// interrupt using lapic_eoi() before calling the scheduler!
-	// LAB 4: Your code here.
-
-	// Unexpected trap: The user process or the kernel has a bug.
-	print_trapframe(tf);
-	if (tf->tf_cs == GD_KT)
-		panic("unhandled trap in kernel");
-	else {
-		env_destroy(curenv);
-		return;
+		default:
+			// Unexpected trap: The user process or the kernel has a bug.
+			print_trapframe(tf);
+			if (tf->tf_cs == GD_KT)
+				panic("unhandled trap in kernel");
+			else {
+				env_destroy(curenv);
+				return;
+			}
 	}
 }
 
