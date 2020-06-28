@@ -280,7 +280,11 @@ mem_init_mp(void)
 	//     Permissions: kernel RW, user NONE
 	//
 	// LAB 4: Your code here:
-
+	// boot_map_region(kern_pgdir, KSTACKTOP-KSTKSIZE, KSTKSIZE, PADDR(&bootstack), PTE_P | PTE_W);
+	for(int i = 0; i < NCPU; i++){
+		uintptr_t kstacktop_i = KSTACKTOP - i * (KSTKSIZE + KSTKGAP);
+		boot_map_region(kern_pgdir, kstacktop_i - KSTKSIZE, KSTKSIZE, PADDR(percpu_kstacks[i]), PTE_P | PTE_W);
+	}
 }
 
 // --------------------------------------------------------------
@@ -355,15 +359,17 @@ page_init(void)
 	pages[0].pp_ref = 1;
 
 	for (i = 1; i < npages_basemem; ++i) {
-	pages[i].pp_ref = 0;
-	pages[i].pp_link = page_free_list;
-	page_free_list = &pages[i];
+		if(page2pa(&pages[i]) == MPENTRY_PADDR)
+			continue;
+		pages[i].pp_ref = 0;
+		pages[i].pp_link = page_free_list;
+		page_free_list = &pages[i];
 	}
 
 	for (i = PADDR(boot_alloc(0)) / PGSIZE; i < npages; ++i) {
-	pages[i].pp_ref = 0;
-	pages[i].pp_link = page_free_list;
-	page_free_list = &pages[i];
+		pages[i].pp_ref = 0;
+		pages[i].pp_link = page_free_list;
+		page_free_list = &pages[i];
 	}
 }
 
@@ -392,6 +398,9 @@ page_alloc(int alloc_flags)
 	page -> pp_link = NULL;
 	if (alloc_flags & ALLOC_ZERO)
 		memset(page2kva(page), '\0', PGSIZE);
+	// above is set the physical address of the page to 0. memset only knows the virtual address,
+	// so we need to pass a virtual address, then the virtual address will be translated to the 
+	// physical address, and the values are set there in the physical address.
 	return page;
 }
 
@@ -490,6 +499,10 @@ boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm
 	// pgdir_walk set the pp_ref of the page table page to one, no the pp_ref of
 	// the mapped pages, so we can use it.
 	// map a page means create a page table entry for it, and fill in that entry.
+	if (va % PGSIZE != 0)
+		panic("in boot_map_region, va is not page-aligned\n");
+	if (pa % PGSIZE != 0)
+		panic("in boot_map_region, pa is not page-aligned\n");
 	uint32_t num = size / PGSIZE;
 	for (uint32_t i = 0; i < num; i++){
 		pte_t *page_entry = pgdir_walk(pgdir, (const void *)(va + i*PGSIZE), 1);
@@ -630,7 +643,9 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// value will be preserved between calls to mmio_map_region
 	// (just like nextfree in boot_alloc).
 	static uintptr_t base = MMIOBASE;
-
+	/* mistake I made here: base is the address of the next region!!!
+	 * Need to update base everytime the function is called!!!
+	 */
 	// Reserve size bytes of virtual memory starting at base and
 	// map physical pages [pa,pa+size) to virtual addresses
 	// [base,base+size).  Since this is device memory and not
@@ -648,8 +663,19 @@ mmio_map_region(physaddr_t pa, size_t size)
 	//
 	// Hint: The staff solution uses boot_map_region.
 	//
-	// Your code here:
-	panic("mmio_map_region not implemented");
+	// // Your code here:
+	// mistake I make here: didn't consider that pa could be not PGSIZE aligned
+	physaddr_t pa_rounded = ROUNDDOWN(pa, PGSIZE);
+	physaddr_t end = ROUNDUP(pa + size, PGSIZE);
+	size_t size_rounded = end - pa_rounded;
+	if (base + size_rounded >= MMIOLIM)
+		panic("mmio size exceed the limit\n");
+	boot_map_region(kern_pgdir, base, size_rounded, pa_rounded, PTE_PCD|PTE_PWT|PTE_W); 
+	/* The line above: boot_map_region will add PTE_P in permission.
+	 * BUT DON'T FORGOT TO ADD PTE_W, in description it says "in addition to"!!!
+	 */
+	base += size_rounded;
+	return (void *)(base - size_rounded);
 }
 
 static uintptr_t user_mem_check_addr;

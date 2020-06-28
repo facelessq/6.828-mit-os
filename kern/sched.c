@@ -29,7 +29,38 @@ sched_yield(void)
 	// below to halt the cpu.
 
 	// LAB 4: Your code here.
+	// cprintf("enter sched_yield\n");
+	int next_env_index;
+	int this_env_index;
 
+	if (thiscpu->cpu_env){
+		// cprintf("cpu_env:%p, env_id:%08x\n", thiscpu->cpu_env, thiscpu->cpu_env->env_id);
+		this_env_index = ENVX(thiscpu->cpu_env->env_id);
+		next_env_index = (this_env_index + 1) % NENV;
+	}
+	// If no previously running environment:
+	else {
+		this_env_index = 0;
+		next_env_index = 0;
+	}
+	// cprintf("this_env_index: %d\n", this_env_index);
+	int count = 0;
+	while (envs[next_env_index].env_status != ENV_RUNNABLE){
+		// If no envs are runnable:
+		if (count == NENV - 1){
+			if (envs[this_env_index].env_status == ENV_RUNNING &&
+				thiscpu->cpu_env)
+				break;
+			else {
+				// cprintf("no envs are runnable, sched_halt\n");
+				sched_halt();
+			}
+		}
+		count++;
+		next_env_index = (next_env_index + 1) % NENV;
+	}
+	// cprintf("next_env_index:%d, begin to run\n", next_env_index);
+	env_run(&envs[next_env_index]);
 	// sched_halt never returns
 	sched_halt();
 }

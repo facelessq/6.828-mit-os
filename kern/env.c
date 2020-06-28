@@ -125,7 +125,7 @@ env_init(void)
 	{
 		envs[i].env_id = 0;
 		envs[i].env_status = ENV_FREE;
-		if(i == NENV) envs[i].env_link = &envs[i+1];
+		if(i != NENV - 1) envs[i].env_link = &envs[i+1];
 		else envs[i].env_link = NULL;
 	}
 
@@ -292,12 +292,12 @@ region_alloc(struct Env *e, void *va, size_t len)
 	//   'va' and 'len' values that are not page-aligned.
 	//   You should round va down, and round (va + len) up.
 	//   (Watch out for corner-cases!)
-	void *va_rounded = ROUNDDOWN(va, PGSIZE);
-	uint32_t len_rounded = ROUNDUP(len, PGSIZE);
-
-	if((uint32_t)va_rounded >= UTOP || ((uint32_t)va_rounded + len_rounded) >=UTOP)
+	uintptr_t va_rounded = ROUNDDOWN((uintptr_t)va, PGSIZE);
+	uintptr_t end = ROUNDUP((uintptr_t)va+len, PGSIZE);
+	int len_rounded = end - va_rounded;
+	if(va_rounded >= UTOP || end >=UTOP)
 		panic("region_alloc can't allocate memory above UTOP\n");
-	for(uint32_t vr=(uint32_t)va_rounded; vr < ((uint32_t)va_rounded + len_rounded) ; vr += PGSIZE)
+	for(uint32_t vr=va_rounded; vr < end ; vr += PGSIZE)
 	{
 		struct PageInfo *pi = page_alloc(0);
 		if (pi == NULL){
@@ -566,6 +566,7 @@ env_run(struct Env *e)
 	curenv = e;
 	e->env_status = ENV_RUNNING;
 	e->env_runs++;
+	unlock_kernel();
 	lcr3(PADDR(e->env_pgdir));
 	env_pop_tf(&(e->env_tf));
 }
