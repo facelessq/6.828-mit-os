@@ -333,7 +333,10 @@ page_fault_handler(struct Trapframe *tf)
 	// Handle kernel-mode page faults.
 
 	// LAB 3: Your code here.
-
+	// Here I think use tf_cs == GD_KT is also OK, see line 204 and 227
+	if ((tf->tf_cs & 0x3) == 0) {
+	    panic("page_fault_handler: page fault in kernel mode");
+	}
 	// We've already handled kernel-mode exceptions, so if we get here,
 	// the page fault happened in user mode.
 
@@ -367,11 +370,39 @@ page_fault_handler(struct Trapframe *tf)
 	//   (the 'tf' variable points at 'curenv->env_tf').
 
 	// LAB 4: Your code here.
+	uintptr_t utf_addr;
+	struct UTrapframe *utf;
+	void * func = curenv->env_pgfault_upcall;
+	if (func != NULL){
+		// check if the page fault happens on the the user exception stack
+		if ((tf->tf_esp >= UXSTACKTOP - PGSIZE) && (tf->tf_esp <= UXSTACKTOP -1)){
+			utf_addr = tf->tf_esp - 4 - sizeof(struct UTrapframe);
+		}
+		else {
+			utf_addr = UXSTACKTOP - sizeof(struct UTrapframe);
+		}
+		user_mem_assert(curenv, (void *)utf_addr, sizeof(struct UTrapframe), PTE_W);
+		utf = (struct UTrapframe *)utf_addr;
+		utf->utf_esp = tf->tf_esp;
+		utf->utf_eflags = tf->tf_eflags;
+		utf->utf_eip = tf->tf_eip;
+		utf->utf_regs = tf->tf_regs; // we can directly do the assignment of struct like this
+		utf->utf_err = tf->tf_err;
+		utf->utf_fault_va = fault_va;
 
-	// Destroy the environment that caused the fault.
-	cprintf("[%08x] user fault va %08x ip %08x\n",
-		curenv->env_id, fault_va, tf->tf_eip);
-	print_trapframe(tf);
-	env_destroy(curenv);
+		// use env_run to return to the user environment, so we need to set up the esp and eip
+		// for that environment. Although the esp in this function now is correct, but the 
+		// user environment use the registers in tf, which is not set.
+		tf->tf_esp = (uintptr_t)utf_addr;
+		tf->tf_eip = (uintptr_t)func;
+		env_run(curenv);
+	}
+	else {
+		// Destroy the environment that caused the fault.
+		cprintf("[%08x] user fault va %08x ip %08x\n",
+			curenv->env_id, fault_va, tf->tf_eip);
+		print_trapframe(tf);
+		env_destroy(curenv);
+	}
 }
 

@@ -24,8 +24,6 @@ pgfault(struct UTrapframe *utf)
 	//   Use the read-only page table mappings at uvpt
 	//   (see <inc/memlayout.h>).
 
-	// LAB 4: Your code here.
-
 	// Allocate a new page, map it at a temporary location (PFTEMP),
 	// copy the data from the old page to the new page, then move the new
 	// page to the old page's address.
@@ -33,8 +31,24 @@ pgfault(struct UTrapframe *utf)
 	//   You should make three system calls.
 
 	// LAB 4: Your code here.
-
-	panic("pgfault not implemented");
+	if ((uvpt[PGNUM(addr)] & PTE_AVAIL) == PTE_COW && (err & FEC_WR)){
+		// allocate a new physical page
+		r = sys_page_alloc(0, (void *)PFTEMP, PTE_P | PTE_U | PTE_W);
+		if (r < 0)
+			panic("alloc writable page fails\n");
+		// copy the content in the old page to the new page
+		uintptr_t page_addr = ROUNDDOWN((uintptr_t)addr, PGSIZE);
+		memcpy((void *)PFTEMP, (void *)page_addr, PGSIZE);
+		// unmap the old physical page to the faulting virtual page
+		if ((r = sys_page_unmap(0, (void *)page_addr)) < 0)
+			panic("In pgfault, unmap:%e\n", r);
+		// map the new physical page to the faulting virtual page
+		if ((r = sys_page_map(0, (void *)PFTEMP, 0, (void *)page_addr, PTE_P | PTE_U | PTE_W)) < 0)
+			panic("In pgfault, remap new page to the old va:%e\n", r);
+	}
+	else{
+		panic("pgfault: wrong fault\n");
+	}
 }
 
 //
@@ -52,9 +66,25 @@ static int
 duppage(envid_t envid, unsigned pn)
 {
 	int r;
-
 	// LAB 4: Your code here.
-	panic("duppage not implemented");
+	uintptr_t addr = pn * PGSIZE;
+	// If the page is writable or copy-on-write, note that now we are the parent
+	if ((uvpt[pn] & PTE_AVAIL) == PTE_COW || (uvpt[pn] & PTE_W) == PTE_W)
+	{
+		// Map the page in child as COW
+		if ((r = sys_page_map(0, (void *)addr, envid, (void *)addr, PTE_U | PTE_P | PTE_COW)) < 0)
+			panic("In duppage, map child's page:%e\n", r);
+		// Map the page in parent as COW as well
+		// uvpt is read-only, so we can't change the permission directly.
+		// Why we need to mark the page in parent again as copy-on-write if it's already copy-on-write?
+		if ((r = sys_page_map(0, (void *)addr, 0, (void *)addr, PTE_U | PTE_P | PTE_COW)) <0)
+			panic("In duppage, remap parent's page:%e\n", r);
+	}
+	else {
+		r = sys_page_map(0, (void *)addr, envid, (void *)addr, PTE_U | PTE_P);
+		if (r < 0)
+			panic("In duppage, map ro page:%e\n", r);
+	}
 	return 0;
 }
 
@@ -78,7 +108,53 @@ envid_t
 fork(void)
 {
 	// LAB 4: Your code here.
-	panic("fork not implemented");
+	int r;
+	set_pgfault_handler(pgfault);
+	
+	envid_t envid = sys_exofork();
+	if (envid < 0)
+		panic("sys_exofork: %e", envid);
+	if (envid == 0) {
+		// We're the child.
+		// The copied value of the global variable 'thisenv'
+		// is no longer valid (it refers to the parent!).
+		// Fix it and return 0.
+		thisenv = &envs[ENVX(sys_getenvid())];
+		set_pgfault_handler(pgfault);
+		return 0;
+	}
+
+	// We're the parent.
+	// For each writable or copy-on-write page in its address space 
+	// below UTOP, the parent calls duppage, which should map the page 
+	// copy-on-write into the address space of the child and then remap
+	// the page copy-on-write in its own address space.
+
+    uintptr_t addr;
+    for (addr = UTEXT; addr < USTACKTOP; addr += PGSIZE) {
+        if ((uvpd[PDX(addr)] & PTE_P) == PTE_P && (uvpt[PGNUM(addr)] & PTE_P) == PTE_P) {
+            duppage(envid, PGNUM(addr));
+        }
+    }
+
+    // Below it's like what we do in set_pgfault_handler in pgfault.c,
+    // but we don't the handler of the child, so we can't use set_pgfault_handler.
+    // copy page fault handler setup to the child
+    extern void _pgfault_upcall();
+    if ((r = sys_env_set_pgfault_upcall(envid, _pgfault_upcall)) != 0) {
+        panic("set pgfault entry for the child: %e", r);
+    }
+
+	//  allocate a new page for the child's user exception stack
+    if ((r = sys_page_alloc(envid, (void *)(UXSTACKTOP - PGSIZE), PTE_W | PTE_U | PTE_P)) != 0) {
+        panic("alloc : %e", r);
+    }
+
+	// Mark the child as runnable
+	if ((r = sys_env_set_status(envid, ENV_RUNNABLE)) < 0)
+		panic("sys_env_set_status: %e", r);
+
+	return envid;
 }
 
 // Challenge!
