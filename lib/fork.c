@@ -119,7 +119,7 @@ fork(void)
 		// The copied value of the global variable 'thisenv'
 		// is no longer valid (it refers to the parent!).
 		// Fix it and return 0.
-		thisenv = &envs[ENVX(sys_getenvid())];
+		thisenv = &envs[ENVX(sys_getenvid())]; // we don't need this line here, why?
 		set_pgfault_handler(pgfault);
 		return 0;
 	}
@@ -137,9 +137,6 @@ fork(void)
         }
     }
 
-    // Below it's like what we do in set_pgfault_handler in pgfault.c,
-    // but we don't the handler of the child, so we can't use set_pgfault_handler.
-    // copy page fault handler setup to the child
     extern void _pgfault_upcall();
     if ((r = sys_env_set_pgfault_upcall(envid, _pgfault_upcall)) != 0) {
         panic("set pgfault entry for the child: %e", r);
